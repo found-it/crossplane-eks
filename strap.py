@@ -5,6 +5,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import time
 
 import kubernetes
 
@@ -28,21 +29,23 @@ def main():
     ]
 
     print("Install helm chart")
-    # try:
-    #     subprocess.run(
-    #         args=args,
-    #         check=True,
-    #         encoding="utf-8",
-    #     )
-    # except subprocess.CalledProcessError as e:
-    #     print(e)
-    #     sys.exit(1)
+    try:
+        subprocess.run(
+            args=args,
+            check=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as e:
+        print(e)
+        sys.exit(1)
 
     kubernetes.config.load_kube_config()
     v1 = kubernetes.client.CoreV1Api()
 
     try:
-        body = kubernetes.client.V1Namespace(api_version="v1", kind="Namespace", metadata={"name": namespace})
+        body = kubernetes.client.V1Namespace(
+            api_version="v1", kind="Namespace", metadata={"name": namespace}
+        )
         v1.create_namespace(body=body)
     except kubernetes.client.rest.ApiException as e:
         if e.status != 409:
@@ -51,13 +54,6 @@ def main():
             print(f"Namespace {namespace} already exists")
     else:
         print(f"Created {namespace}")
-
-    # namespaces = v1.list_namespace()
-    # ns = [n.metadata.name for n in namespaces.items]
-    # if namespace not in ns:
-    #     print(f"Creating namespace: {namespace}")
-    # else:
-    #     print(f"{namespace} namespace already exists")
 
     secret_name = "aws-creds"
 
@@ -82,6 +78,47 @@ def main():
             print(f"Secret {secret_name} already exists in {namespace}")
     else:
         print(f"Created secret {secret_name} in {namespace}")
+
+    args = [
+        "kubectl",
+        "apply",
+        "--filename",
+        "manifests/providerconfig.yaml",
+    ]
+
+    try:
+        subprocess.run(
+            args=args,
+            check=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as e:
+        print(e)
+        sys.exit(1)
+
+    time.sleep(5)
+
+    args = [
+        "kubectl",
+        "apply",
+        "--filename",
+        "manifests/infra.yaml",
+    ]
+
+    try:
+        subprocess.run(
+            args=args,
+            check=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as e:
+        print(e)
+        sys.exit(1)
+
+    # Wait for cluster
+    # AWS grab kubeconfig
+    # Update the AWS CM
+    # Create clusterrolebinding
 
 
 if __name__ == "__main__":
