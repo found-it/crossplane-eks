@@ -1,0 +1,456 @@
+---
+#
+# VPC
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: VPC
+metadata:
+  name: dev
+  labels:
+    resource: vpc-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    cidrBlock: "10.100.0.0/16"
+    enableDnsHostNames: true
+    enableDnsSupport: true
+    # instanceTenancy: "wut"
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev"
+  providerConfigRef:
+    name: default
+
+---
+#
+# Internet Gateway
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: InternetGateway
+metadata:
+  name: dev
+  labels:
+    resource: internetgateway-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev"
+    vpcIdSelector:
+      matchLabels:
+        resource: vpc-dev
+  providerConfigRef:
+    name: default
+---
+#
+# RouteTable
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: RouteTable
+metadata:
+  name: dev
+  labels:
+    resource: routetable-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    associations:
+    - subnetIdSelector:
+        matchLabels:
+          resource: subnet-dev-a
+    - subnetIdRef:
+        name: subnet-dev-b
+    routes:
+    - destinationCidrBlock: "0.0.0.0/0"
+      gatewayIdRef:
+        name: dev
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev"
+    vpcIdRef:
+      name: dev
+  providerConfigRef:
+    name: default
+---
+#
+# Subnet A
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: Subnet
+metadata:
+  name: subnet-dev-a
+  labels:
+    resource: subnet-dev-a
+    eks: subnet
+    az: us-west-2a
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    cidrBlock: "10.100.0.0/24"
+    mapPublicIPOnLaunch: true
+    availabilityZone: us-west-2a
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev-a"
+    vpcIdRef:
+      name: dev
+  providerConfigRef:
+    name: default
+---
+#
+# Subnet B
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: Subnet
+metadata:
+  name: subnet-dev-b
+  labels:
+    resource: subnet-dev-b
+    eks: subnet
+    az: us-west-2b
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    cidrBlock: "10.100.1.0/24"
+    mapPublicIPOnLaunch: true
+    availabilityZone: us-west-2b
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev-b"
+    vpcIdSelector:
+      matchLabels:
+        resource: vpc-dev
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRole - controlplane
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRole
+metadata:
+  name: iam-controlplane
+  labels:
+    resource: iam-controlplane
+    role: controlplane
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    assumeRolePolicyDocument: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": [
+                        "eks.amazonaws.com"
+                    ]
+                },
+                "Action": [
+                    "sts:AssumeRole"
+                ]
+            }
+        ]
+      }
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev-b"
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRolePolicyAttachment
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRolePolicyAttachment
+metadata:
+  name: iam-attach-controlplane-cluster
+  labels:
+    resource: iam-attach-controlplane-cluster
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+    roleNameSelector:
+      matchLabels:
+        role: controlplane
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRolePolicyAttachment
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRolePolicyAttachment
+metadata:
+  name: iam-attach-controlplane-service
+  labels:
+    resource: iam-attach-controlplane-service
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+    roleNameSelector:
+      matchLabels:
+        role: controlplane
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRole - nodegroup
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRole
+metadata:
+  name: iam-nodegroup
+  labels:
+    resource: iam-nodegroup
+    role: nodegroup
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    assumeRolePolicyDocument: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": [
+                        "ec2.amazonaws.com"
+                    ]
+                },
+                "Action": [
+                    "sts:AssumeRole"
+                ]
+            }
+        ]
+      }
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev-b"
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRolePolicyAttachment
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRolePolicyAttachment
+metadata:
+  name: iam-attach-cni
+  labels:
+    resource: iam-attach-cni
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+    roleNameSelector:
+      matchLabels:
+        role: nodegroup
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRolePolicyAttachment
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRolePolicyAttachment
+metadata:
+  name: iam-attach-worker
+  labels:
+    resource: iam-attach-worker
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+    roleNameSelector:
+      matchLabels:
+        role: nodegroup
+  providerConfigRef:
+    name: default
+---
+#
+# IAMRolePolicyAttachment
+#
+apiVersion: identity.aws.crossplane.io/v1beta1
+kind: IAMRolePolicyAttachment
+metadata:
+  name: iam-attach-ecr
+  labels:
+    resource: iam-attach-ecr
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+    roleNameSelector:
+      matchLabels:
+        role: nodegroup
+  providerConfigRef:
+    name: default
+---
+#
+# SecurityGroup
+#
+apiVersion: ec2.aws.crossplane.io/v1beta1
+kind: SecurityGroup
+metadata:
+  name: dev
+  labels:
+    resource: securitygroup-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    groupName: dev
+    description: Allow access to VPC
+    ingress:
+      - fromPort: 443
+        toPort: 443
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: "0.0.0.0/0"
+            description: Allow pods to communicate with the cluster API server.
+      - fromPort: 80
+        toPort: 80
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: "0.0.0.0/0"
+            description: Allow internet access to pods.
+      - fromPort: 22
+        toPort: 22
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: "184.99.39.198/32"
+            description: SSH
+      - fromPort: 22
+        toPort: 22
+        ipProtocol: tcp
+        ipRanges:
+          - cidrIp: "18.237.140.160/29"
+            description: SSH Wizard
+    region: "us-west-2"
+    tags:
+    - key: "ManagedBy"
+      value: "jpetersen"
+    - key: "Group"
+      value: "services"
+    - key: "Name"
+      value: "dev"
+    vpcIdSelector:
+      matchLabels:
+        resource: vpc-dev
+  providerConfigRef:
+    name: default
+
+---
+#
+# Cluster
+#
+apiVersion: eks.aws.crossplane.io/v1beta1
+kind: Cluster
+metadata:
+  name: dev
+  labels:
+    resource: cluster-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    version: "1.19"
+    roleArnSelector:
+      matchLabels:
+        role: controlplane
+    resourcesVpcConfig:
+      endpointPrivateAccess: true
+      endpointPublicAccess: true
+      publicAccessCidrs:
+      - "184.99.39.198/32"
+      securityGroupIdSelector:
+        matchLabels:
+          resource: securitygroup-dev
+      subnetIdSelector:
+        matchLabels:
+          eks: subnet
+    region: "us-west-2"
+    tags:
+      ManagedBy: jpetersen
+      Group: services
+      Name: dev
+  providerConfigRef:
+    name: default
+---
+#
+# NodeGroup
+#
+apiVersion: eks.aws.crossplane.io/v1alpha1
+kind: NodeGroup
+metadata:
+  name: dev
+  labels:
+    resource: nodegroup-dev
+spec:
+  deletionPolicy: Delete
+  forProvider:
+    # amiType: ""
+    clusterNameSelector:
+      matchLabels:
+        resource: cluster-dev
+    instanceTypes:
+    - m5.xlarge
+    labels:
+      test: jpetersen
+    nodeRoleSelector:
+      matchLabels:
+        role: nodegroup
+    # remoteAccess: {}
+    scalingConfig:
+      desiredSize: 3
+      maxSize: 5
+      minSize: 2
+    subnetSelector:
+      matchLabels:
+        eks: subnet
+    region: "us-west-2"
+    tags:
+      ManagedBy: jpetersen
+      Group: services
+      Name: dev
+    # vpcIdSelector:
+    #   matchLabels:
+    #     resource: vpc-dev
+  providerConfigRef:
+    name: default

@@ -1,0 +1,4 @@
+
+provider:
+  packages:
+  - crossplane/provider-aws:master
