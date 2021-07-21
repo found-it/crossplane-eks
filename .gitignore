@@ -2,3 +2,4 @@ creds.conf
 cloud.yaml
 anchore_values.yaml
 license.yaml
+cloudflared.yaml
