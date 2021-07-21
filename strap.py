@@ -79,6 +79,8 @@ def main():
     else:
         print(f"Created secret {secret_name} in {namespace}")
 
+    time.sleep(2)
+
     args = [
         "kubectl",
         "apply",
@@ -96,6 +98,7 @@ def main():
         print(e)
         sys.exit(1)
 
+    # Wait for the CRDs
     time.sleep(5)
 
     args = [
