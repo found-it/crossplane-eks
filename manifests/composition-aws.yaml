@@ -1,0 +1,449 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: cluster-aws
+  labels:
+    provider: aws
+    cluster: eks
+spec:
+  compositeTypeRef:
+    apiVersion: yourmom.edu/v1alpha1
+    kind: CompositeK8sCluster
+  patchSets:
+  - name: metadata
+    patches:
+    - fromFieldPath: metadata.labels
+    - fromFieldPath: metadata.annotations[yourmom.edu/app]
+  resources:
+
+
+  #
+  # VPC
+  #
+  - name: eks-vpc
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: VPC
+      spec:
+        forProvider:
+          cidrBlock: "10.100.0.0/16"
+          enableDnsHostNames: true
+          enableDnsSupport: true
+          # instanceTenancy: "wut"
+          region: "us-west-2"
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+  #
+  # End VPC
+  #
+
+  #
+  # Networking
+  #
+  - name: eks-ig
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: InternetGateway
+      spec:
+        forProvider:
+          region: "us-west-2"
+          vpcIdSelector:
+            matchControllerRef: true
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+  - name: eks-rt
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: RouteTable
+      spec:
+        forProvider:
+          associations:
+          - subnetIdSelector:
+              matchControllerRef: true
+              matchLabels:
+                zone: us-west-2a
+          - subnetIdSelector:
+              matchControllerRef: true
+              matchLabels:
+                zone: us-west-2b
+          routes:
+          - destinationCidrBlock: "0.0.0.0/0"
+            gatewayIdSelector:
+              matchControllerRef: true
+          region: "us-west-2"
+          vpcIdSelector:
+            matchControllerRef: true
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+  - name: eks-subnet-a
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: Subnet
+      metadata:
+        labels:
+          zone: us-west-2a
+          resource: subnet
+      spec:
+        forProvider:
+          cidrBlock: "10.100.0.0/24"
+          mapPublicIPOnLaunch: true
+          availabilityZone: us-west-2a
+          region: "us-west-2"
+          vpcIdSelector:
+            matchControllerRef: true
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+  - name: eks-subnet-b
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: Subnet
+      metadata:
+        labels:
+          zone: us-west-2b
+          resource: subnet
+      spec:
+        forProvider:
+          cidrBlock: "10.100.1.0/24"
+          mapPublicIPOnLaunch: true
+          availabilityZone: us-west-2b
+          region: "us-west-2"
+          vpcIdSelector:
+            matchControllerRef: true
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+
+  #
+  # Controlplane IAM roles and attachments
+  #
+  - name: eks-iamrole-controlplane
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRole
+      metadata:
+        labels:
+          role: controlplane
+      spec:
+        forProvider:
+          assumeRolePolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Service": [
+                              "eks.amazonaws.com"
+                          ]
+                      },
+                      "Action": [
+                          "sts:AssumeRole"
+                      ]
+                  }
+              ]
+            }
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+  - name: eks-iamattachment-cluster
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRolePolicyAttachment
+      spec:
+        forProvider:
+          policyArn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+          roleNameSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: controlplane
+
+  - name: eks-iamattachment-service
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRolePolicyAttachment
+      spec:
+        forProvider:
+          policyArn: arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+          roleNameSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: controlplane
+
+  #
+  # Controlplane IAM roles and attachments
+  #
+  - name: eks-iamrole-nodegroup
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRole
+      metadata:
+        labels:
+          role: nodegroup
+      spec:
+        forProvider:
+          assumeRolePolicyDocument: |
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                      "Effect": "Allow",
+                      "Principal": {
+                          "Service": [
+                              "ec2.amazonaws.com"
+                          ]
+                      },
+                      "Action": [
+                          "sts:AssumeRole"
+                      ]
+                  }
+              ]
+            }
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+
+  - name: eks-iamattachment-cni
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRolePolicyAttachment
+      spec:
+        forProvider:
+          policyArn: arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+          roleNameSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: nodegroup
+
+  - name: eks-iamattachment-worker
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRolePolicyAttachment
+      spec:
+        forProvider:
+          policyArn: arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+          roleNameSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: nodegroup
+
+  - name: eks-iamattachment-ecr
+    base:
+      apiVersion: identity.aws.crossplane.io/v1beta1
+      kind: IAMRolePolicyAttachment
+      spec:
+        forProvider:
+          policyArn: arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+          roleNameSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: nodegroup
+
+
+  #
+  # SecurityGroup
+  #
+  - name: eks-sg
+    base:
+      apiVersion: ec2.aws.crossplane.io/v1beta1
+      kind: SecurityGroup
+      spec:
+        forProvider:
+          groupName: dev # TODO: Make sane
+          description: Allow access to VPC
+          ingress:
+            - fromPort: 443
+              toPort: 443
+              ipProtocol: tcp
+              ipRanges:
+                - cidrIp: "0.0.0.0/0"
+                  description: Allow pods to communicate with the cluster API server.
+            - fromPort: 80
+              toPort: 80
+              ipProtocol: tcp
+              ipRanges:
+                - cidrIp: "0.0.0.0/0"
+                  description: Allow internet access to pods.
+          region: "us-west-2"
+          tags:
+          - key: "ManagedBy"
+            value: "unknown"
+          - key: "Group"
+            value: "unknown"
+    patches:
+    - fromFieldPath: spec.parameters.managedBy
+      toFieldPath: spec.forProvider.tags[0].value
+    - fromFieldPath: spec.parameters.group
+      toFieldPath: spec.forProvider.tags[1].value
+
+
+  #
+  # Cluster
+  #
+  - name: eks-cluster
+    base:
+      apiVersion: eks.aws.crossplane.io/v1beta1
+      kind: Cluster
+      spec:
+        forProvider:
+          version: "1.19"
+          roleArnSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: controlplane
+          resourcesVpcConfig:
+            endpointPrivateAccess: true
+            endpointPublicAccess: true
+            publicAccessCidrs:
+            - "184.99.39.198/32"
+            # securityGroupIdSelector:
+            #   matchControllerRef: true
+            subnetIdSelector:
+              matchControllerRef: true
+          region: "us-west-2"
+          # TODO: Fill these in
+          tags:
+            ManagedBy: jpetersen
+            Group: services
+            Name: dev
+      patches:
+      - fromFieldPath: metadata.annotations[crossplane.io/external-name]
+        toFieldPath: metadata.annotations[crossplane.io/external-name]
+      - fromFieldPath: spec.parameters.version
+        toFieldPath: spec.forProvider.version
+      - fromFieldPath: metadata.uid
+        toFieldPath: spec.writeConnectionSecretToRef.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-ekscluster"
+      - type: ToCompositeFieldPath
+        fromFieldPath: metadata.annotations[crossplane.io/external-name]
+        toFieldPath: status.clusterName
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.status
+        toFieldPath: status.controlPlaneStatus
+      - fromFieldPath: spec.writeConnectionSecretToRef.namespace
+        toFieldPath: spec.writeConnectionSecretToRef.namespace
+      readinessChecks:
+      - type: MatchString
+        fieldPath: status.atProvider.status
+        matchString: ACTIVE
+      connectionDetails:
+      - fromConnectionSecretKey: kubeconfig
+
+
+  #
+  # NodeGroup
+  #
+  - name: eks-nodegroup
+    base:
+      apiVersion: eks.aws.crossplane.io/v1alpha1
+      kind: NodeGroup
+      spec:
+        forProvider:
+          # amiType: ""
+          clusterNameSelector:
+            matchControllerRef: true
+          nodeRoleSelector:
+            matchControllerRef: true
+            matchLabels:
+              role: nodegroup
+          subnetSelector:
+            matchLabels:
+              resource: subnet
+          instanceTypes:
+          - m5.xlarge
+          # TODO: Helpful node labels?
+          # labels:
+          #   test: jpetersen
+          # TODO: Remote Access configurable?
+          # remoteAccess: {}
+          scalingConfig:
+            desiredSize: 3
+            maxSize: 5
+            minSize: 1
+          region: "us-west-2"
+          tags:
+            ManagedBy: jpetersen
+            Group: services
+            Name: dev
+    patches:
+    - fromFieldPath: spec.parameters.nodeSize
+      toFieldPath: spec.forProvider.instanceTypes[0]
+      transforms:
+        - type: map
+          map:
+            small: t3.small
+            medium: t3.medium
+            large: t3.large
+            xlarge: t3.xlarge
+    - fromFieldPath: spec.parameters.minNodeCount
+      toFieldPath: spec.forProvider.scalingConfig.minSize
+    - fromFieldPath: spec.parameters.minNodeCount
+      toFieldPath: spec.forProvider.scalingConfig.desiredSize
+    - type: ToCompositeFieldPath
+      fromFieldPath: status.atProvider.status
+      toFieldPath: status.nodePoolStatus
+    readinessChecks:
+    - type: MatchString
+      fieldPath: status.atProvider.status
+      matchString: ACTIVE

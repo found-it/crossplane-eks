@@ -10,6 +10,24 @@ import time
 import kubernetes
 
 
+def _kubectl_apply(manifest):
+    args = [
+        "kubectl",
+        "apply",
+        "--filename",
+        manifest,
+    ]
+
+    try:
+        subprocess.run(
+            args=args,
+            check=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError:
+        raise
+
+
 def main():
     namespace = "crossplane-system"
 
@@ -80,43 +98,15 @@ def main():
         print(f"Created secret {secret_name} in {namespace}")
 
     time.sleep(2)
-
-    args = [
-        "kubectl",
-        "apply",
-        "--filename",
-        "manifests/providerconfig.yaml",
-    ]
-
-    try:
-        subprocess.run(
-            args=args,
-            check=True,
-            encoding="utf-8",
-        )
-    except subprocess.CalledProcessError as e:
-        print(e)
-        sys.exit(1)
+    _kubectl_apply(manifest="manifests/providerconfig.yaml")
 
     # Wait for the CRDs
-    time.sleep(5)
+    time.sleep(2)
+    _kubectl_apply(manifest="manifests/definition.yaml")
+    # _kubectl_apply(manifest="manifests/infra.yaml")
 
-    args = [
-        "kubectl",
-        "apply",
-        "--filename",
-        "manifests/infra.yaml",
-    ]
-
-    try:
-        subprocess.run(
-            args=args,
-            check=True,
-            encoding="utf-8",
-        )
-    except subprocess.CalledProcessError as e:
-        print(e)
-        sys.exit(1)
+    time.sleep(2)
+    _kubectl_apply(manifest="manifests/composition-aws.yaml")
 
     # Wait for cluster
     # AWS grab kubeconfig

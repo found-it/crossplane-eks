@@ -1,0 +1,21 @@
+apiVersion: yourmom.edu/v1alpha1
+kind: CompositeK8sCluster
+metadata:
+  name: dev
+  labels:
+    owner: james
+  annotations:
+    yourmom.org/app: mycluster
+spec:
+  compositionRef:
+    name: cluster-aws
+  parameters:
+    nodeSize: small
+    version: "1.19"
+    minimumNodeCount: 1
+    managedBy: jpetersen
+    group: services
+  writeConnectionSecretToRef:
+    namespace: aws
+    # TODO: Why isn't this picking up?
+    name: cluster
